@@ -68,13 +68,40 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view v1.0.0 >/dev/null 2>&1 && gh release delete v1.0.0 --yes || true
-          gh release create v1.0.0 \
-            out/earphone-knots-1080p60.mp4 \
-            out/earphone-knots-mobile-720p30.mp4 \
-            out/storyboard.jpg \
-            --title "耳机线为什么会自己打结｜1080P 60FPS" \
-            --notes "60秒、16:9、1920×1080、60FPS原创科学动画。提供完整版MP4、720P手机版以及分镜总览。此仓库与世界历史项目完全独立。"
+          if gh release view v1.0.0 >/dev/null 2>&1; then
+            gh release upload v1.0.0 out/earphone-knots-1080p60.mp4 out/earphone-knots-mobile-720p30.mp4 out/storyboard.jpg --clobber
+          else
+            gh release create v1.0.0 \
+              out/earphone-knots-1080p60.mp4 \
+              out/earphone-knots-mobile-720p30.mp4 \
+              out/storyboard.jpg \
+              --title "耳机线为什么会自己打结｜1080P 60FPS" \
+              --notes "60秒、16:9、1920×1080、60FPS原创科学动画。提供完整版MP4、720P手机版和分镜图。此仓库与世界历史项目完全独立。"
+          fi
+          gh release view v1.0.0 --json url,assets > release-status.json
+
+      - name: Verify assets and publish confirmed download links in repository
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("release-status.json").read_text())
+          assets={a["name"]:a["url"] for a in d["assets"]}
+          expected=["earphone-knots-1080p60.mp4","earphone-knots-mobile-720p30.mp4","storyboard.jpg"]
+          assert all(n in assets for n in expected), f"Missing assets: {assets}"
+          lines=["# 视频已发布 · 下载链接","","已实际创建 GitHub Release 并核实以下附件：",""]
+          for n in expected:
+              lines.append(f"- [{n}]({assets[n]})")
+          lines.append("")
+          lines.append("发布页："+d["url"])
+          lines.append("")
+          lines.append("仅此耳机线视频仓库，本次工作没有修改任何历史视频项目。")
+          Path("RELEASE_READY.md").write_text("\n".join(lines)+"\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add RELEASE_READY.md
+          git diff --cached --quiet || (git commit -m "Record verified video download links" && git push)
 
       - name: Save fallback downloadable workflow artifact
         if: always()
